@@ -79,7 +79,7 @@ async function handleUpload(request, env, cors, loc) {
 
   let dcRes;
   try {
-    dcRes = await fetch(`${env.DC_BASE_URL}/api/upload`, { method: "POST", body: forward });
+    dcRes = await env.DC.fetch(new Request("https://dc/api/upload", { method: "POST", body: forward }));
   } catch (err) {
     await logError(env, `DC unreachable: ${err.message}`, loc);
     return json({ error: FRIENDLY_ERROR }, 503, cors);
@@ -106,10 +106,10 @@ async function handleFeed(request, env, cors, loc) {
   try {
     const localParams = new URLSearchParams({ continent, limit: "15" });
     if (country) localParams.set("country", country);
-    localRes = await fetch(`${env.DC_BASE_URL}/api/videos?${localParams}`);
+    localRes = await env.DC.fetch(new Request(`https://dc/api/videos?${localParams}`));
 
     const viralParams = new URLSearchParams({ min_views: String(VIRAL_VIEW_THRESHOLD), limit: "10" });
-    viralRes = await fetch(`${env.DC_BASE_URL}/api/videos?${viralParams}`);
+    viralRes = await env.DC.fetch(new Request(`https://dc/api/videos?${viralParams}`));
   } catch (err) {
     await logError(env, `DC unreachable on feed: ${err.message}`, loc);
     return json({ error: FRIENDLY_ERROR }, 503, cors);
@@ -139,7 +139,7 @@ async function handleSearch(request, env, cors, loc) {
 
   let dcRes;
   try {
-    dcRes = await fetch(`${env.DC_BASE_URL}/api/search?${new URLSearchParams({ q, limit: "60" })}`);
+    dcRes = await env.DC.fetch(new Request(`https://dc/api/search?${new URLSearchParams({ q, limit: "60" })}`));
   } catch (err) {
     await logError(env, `DC unreachable on search: ${err.message}`, loc);
     return json({ error: FRIENDLY_ERROR }, 503, cors);
@@ -175,7 +175,7 @@ async function handleSearch(request, env, cors, loc) {
 
 async function handleView(id, env, cors) {
   try {
-    await fetch(`${env.DC_BASE_URL}/api/videos/${id}/view`, { method: "POST" });
+    await env.DC.fetch(new Request(`https://dc/api/videos/${id}/view`, { method: "POST" }));
   } catch (_) { /* non-critical, don't fail the request over this */ }
   return json({ ok: true }, 200, cors);
 }

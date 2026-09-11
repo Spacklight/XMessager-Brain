@@ -7,5 +7,9 @@ binding = "BRAIN_DB"
 database_name = "xmessager-brain-db"
 database_id = "05faedf1-b163-4d5a-8208-a1812e77ddb3"
 
+[[services]]
+binding = "DC"
+service = "xmessager-backend"
+
 [vars]
 DC_BASE_URL = "https://xmessager-backend.emalawi.workers.dev"
