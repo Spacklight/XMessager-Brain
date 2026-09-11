@@ -1,0 +1,11 @@
+name = "xmessager-brain"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+[[d1_databases]]
+binding = "BRAIN_DB"
+database_name = "xmessager-brain-db"
+database_id = "05faedf1-b163-4d5a-8208-a1812e77ddb3"
+
+[vars]
+DC_BASE_URL = "https://xmessager-backend.emalawi.workers.dev"
