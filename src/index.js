@@ -31,6 +31,17 @@ export default {
       const viewMatch = url.pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/view$/);
       if (viewMatch && request.method === "POST") return await handleView(viewMatch[1], env, cors);
 
+      const likeMatch = url.pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/like$/);
+      if (likeMatch && request.method === "POST") return await proxyToDC(request, env, cors, `/api/videos/${likeMatch[1]}/like`, "POST");
+      const saveMatch = url.pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/save$/);
+      if (saveMatch && request.method === "POST") return await proxyToDC(request, env, cors, `/api/videos/${saveMatch[1]}/save`, "POST");
+      const shareMatch = url.pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/share$/);
+      if (shareMatch && request.method === "POST") return await proxyToDC(request, env, cors, `/api/videos/${shareMatch[1]}/share`, "POST");
+      const commentMatch = url.pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/comments$/);
+      if (commentMatch && request.method === "GET") return await proxyToDC(request, env, cors, `/api/videos/${commentMatch[1]}/comments`, "GET");
+      if (commentMatch && request.method === "POST") return await proxyToDC(request, env, cors, `/api/videos/${commentMatch[1]}/comments`, "POST");
+      if (url.pathname === "/api/videos/follow" && request.method === "POST") return await proxyToDC(request, env, cors, `/api/videos/follow`, "POST");
+
       if (url.pathname === "/admin" && request.method === "GET") return adminPage(cors);
       if (url.pathname === "/api/admin/stats" && request.method === "GET") return await withAdmin(request, env, cors, adminStats);
 
@@ -101,14 +112,19 @@ async function handleFeed(request, env, cors, loc) {
   const url = new URL(request.url);
   const continent = url.searchParams.get("continent") || loc.continent || "AF";
   const country = url.searchParams.get("country") || loc.country;
+  const userId = url.searchParams.get("user_id");
+  const category = url.searchParams.get("category");
 
   let localRes, viralRes;
   try {
     const localParams = new URLSearchParams({ continent, limit: "15" });
     if (country) localParams.set("country", country);
+    if (userId) localParams.set("user_id", userId);
+    if (category) localParams.set("category", category);
     localRes = await env.DC.fetch(new Request(`https://dc/api/videos?${localParams}`));
 
     const viralParams = new URLSearchParams({ min_views: String(VIRAL_VIEW_THRESHOLD), limit: "10" });
+    if (userId) viralParams.set("user_id", userId);
     viralRes = await env.DC.fetch(new Request(`https://dc/api/videos?${viralParams}`));
   } catch (err) {
     await logError(env, `DC unreachable on feed: ${err.message}`, loc);
@@ -135,11 +151,14 @@ async function handleSearch(request, env, cors, loc) {
   await logVisit(env, "/api/search", loc);
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") || "").trim();
+  const userId = url.searchParams.get("user_id");
   if (!q) return json({ videos: [] }, 200, cors);
 
   let dcRes;
   try {
-    dcRes = await env.DC.fetch(new Request(`https://dc/api/search?${new URLSearchParams({ q, limit: "60" })}`));
+    const searchParams = new URLSearchParams({ q, limit: "60" });
+    if (userId) searchParams.set("user_id", userId);
+    dcRes = await env.DC.fetch(new Request(`https://dc/api/search?${searchParams}`));
   } catch (err) {
     await logError(env, `DC unreachable on search: ${err.message}`, loc);
     return json({ error: FRIENDLY_ERROR }, 503, cors);
@@ -292,6 +311,21 @@ if (TOKEN) { document.getElementById('login').classList.add('hidden'); document.
 </script>
 </body></html>`;
   return new Response(html, { headers: { ...cors, "Content-Type": "text/html;charset=utf-8" } });
+}
+
+async function proxyToDC(request, env, cors, path, method) {
+  try {
+    const init = { method };
+    if (method === "POST") {
+      init.body = await request.text();
+      init.headers = { "Content-Type": "application/json" };
+    }
+    const dcRes = await env.DC.fetch(new Request(`https://dc${path}`, init));
+    const data = await dcRes.json().catch(() => ({}));
+    return json(data, dcRes.status, cors);
+  } catch (err) {
+    return json({ error: FRIENDLY_ERROR }, 503, cors);
+  }
 }
 
 function json(obj, status, cors) {
