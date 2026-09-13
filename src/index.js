@@ -41,6 +41,7 @@ export default {
       if (commentMatch && request.method === "GET") return await proxyToDC(request, env, cors, `/api/videos/${commentMatch[1]}/comments`, "GET");
       if (commentMatch && request.method === "POST") return await proxyToDC(request, env, cors, `/api/videos/${commentMatch[1]}/comments`, "POST");
       if (url.pathname === "/api/videos/follow" && request.method === "POST") return await proxyToDC(request, env, cors, `/api/videos/follow`, "POST");
+      if (url.pathname === "/api/my/stats" && request.method === "GET") return await proxyToDC(request, env, cors, `/api/my/stats?${url.searchParams}`, "GET");
 
       if (url.pathname === "/admin" && request.method === "GET") return adminPage(cors);
       if (url.pathname === "/api/admin/stats" && request.method === "GET") return await withAdmin(request, env, cors, adminStats);
