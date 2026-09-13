@@ -32,15 +32,15 @@ export default {
       if (viewMatch && request.method === "POST") return await handleView(viewMatch[1], env, cors);
 
       const likeMatch = url.pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/like$/);
-      if (likeMatch && request.method === "POST") return await proxyToDC(request, env, cors, `/api/videos/${likeMatch[1]}/like`, "POST");
+      if (likeMatch && request.method === "POST") return await proxyToDCAuthed(request, env, cors, `/api/videos/${likeMatch[1]}/like`, "POST", { idField: "user_id" });
       const saveMatch = url.pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/save$/);
-      if (saveMatch && request.method === "POST") return await proxyToDC(request, env, cors, `/api/videos/${saveMatch[1]}/save`, "POST");
+      if (saveMatch && request.method === "POST") return await proxyToDCAuthed(request, env, cors, `/api/videos/${saveMatch[1]}/save`, "POST", { idField: "user_id" });
       const shareMatch = url.pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/share$/);
-      if (shareMatch && request.method === "POST") return await proxyToDC(request, env, cors, `/api/videos/${shareMatch[1]}/share`, "POST");
+      if (shareMatch && request.method === "POST") return await proxyToDCAuthed(request, env, cors, `/api/videos/${shareMatch[1]}/share`, "POST", {});
       const commentMatch = url.pathname.match(/^\/api\/videos\/([a-f0-9-]+)\/comments$/);
       if (commentMatch && request.method === "GET") return await proxyToDC(request, env, cors, `/api/videos/${commentMatch[1]}/comments`, "GET");
-      if (commentMatch && request.method === "POST") return await proxyToDC(request, env, cors, `/api/videos/${commentMatch[1]}/comments`, "POST");
-      if (url.pathname === "/api/videos/follow" && request.method === "POST") return await proxyToDC(request, env, cors, `/api/videos/follow`, "POST");
+      if (commentMatch && request.method === "POST") return await proxyToDCAuthed(request, env, cors, `/api/videos/${commentMatch[1]}/comments`, "POST", { idField: "user_id", nameField: "user_name" });
+      if (url.pathname === "/api/videos/follow" && request.method === "POST") return await proxyToDCAuthed(request, env, cors, `/api/videos/follow`, "POST", { idField: "follower_user_id" });
       if (url.pathname === "/api/my/stats" && request.method === "GET") return await proxyToDC(request, env, cors, `/api/my/stats?${url.searchParams}`, "GET");
 
       if (url.pathname === "/admin" && request.method === "GET") return adminPage(cors);
@@ -83,11 +83,23 @@ async function logError(env, message, loc) {
 async function handleUpload(request, env, cors, loc) {
   await logVisit(env, "/api/upload", loc);
 
+  const user = await getVerifiedUser(request, env);
+  if (!user) return json({ error: "You must be logged in to upload" }, 401, cors);
+
   const incoming = await request.formData();
   const forward = new FormData();
   for (const [key, value] of incoming.entries()) forward.append(key, value);
   forward.set("continent", loc.continent || "AF");
   if (loc.country) forward.set("country", loc.country);
+
+  // Never trust client-supplied identity — the uploader is always the verified session user.
+  forward.set("uploader_user_id", user.id);
+  forward.set("uploader", user.display_name);
+
+  if (forward.get("uploader_type") === "page") {
+    const ownsPage = await verifyPageOwnership(request, env, forward.get("page_id"));
+    if (!ownsPage) return json({ error: "You don't own that page" }, 403, cors);
+  }
 
   let dcRes;
   try {
@@ -312,6 +324,52 @@ if (TOKEN) { document.getElementById('login').classList.add('hidden'); document.
 </script>
 </body></html>`;
   return new Response(html, { headers: { ...cors, "Content-Type": "text/html;charset=utf-8" } });
+}
+
+async function getVerifiedUser(request, env) {
+  const auth = request.headers.get("Authorization");
+  if (!auth) return null;
+  try {
+    const res = await env.SOCIAL.fetch(new Request("https://social/api/me", { headers: { Authorization: auth } }));
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (_) {
+    return null;
+  }
+}
+
+async function verifyPageOwnership(request, env, pageId) {
+  if (!pageId) return false;
+  try {
+    const auth = request.headers.get("Authorization");
+    const res = await env.SOCIAL.fetch(new Request("https://social/api/my/pages", { headers: { Authorization: auth } }));
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.pages.some((p) => p.id === pageId && p.my_role === "owner");
+  } catch (_) {
+    return false;
+  }
+}
+
+async function proxyToDCAuthed(request, env, cors, path, method, opts) {
+  const user = await getVerifiedUser(request, env);
+  if (!user) return json({ error: "You must be logged in" }, 401, cors);
+  try {
+    const init = { method };
+    if (method === "POST") {
+      let body = {};
+      try { body = await request.json(); } catch (_) {}
+      if (opts.idField) body[opts.idField] = user.id;
+      if (opts.nameField) body[opts.nameField] = user.display_name;
+      init.body = JSON.stringify(body);
+      init.headers = { "Content-Type": "application/json" };
+    }
+    const dcRes = await env.DC.fetch(new Request(`https://dc${path}`, init));
+    const data = await dcRes.json().catch(() => ({}));
+    return json(data, dcRes.status, cors);
+  } catch (err) {
+    return json({ error: FRIENDLY_ERROR }, 503, cors);
+  }
 }
 
 async function proxyToDC(request, env, cors, path, method) {

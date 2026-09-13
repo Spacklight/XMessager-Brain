@@ -11,5 +11,9 @@ database_id = "05faedf1-b163-4d5a-8208-a1812e77ddb3"
 binding = "DC"
 service = "xmessager-backend"
 
+[[services]]
+binding = "SOCIAL"
+service = "xmessager-social"
+
 [vars]
 DC_BASE_URL = "https://xmessager-backend.emalawi.workers.dev"
